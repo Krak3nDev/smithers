@@ -165,6 +165,36 @@ describe("ClaudeCodeAgent structured_output result handling", () => {
     expect(completed.answer).toBe("plain prose");
   });
 
+  test("flags the case where a schema was sent but the tool was never called", async () => {
+    // tool_choice is null on the wire, so StructuredOutput is offered rather than
+    // forced and the model may decline -- observed on prompts unrelated to the
+    // schema. That degradation must not be silent.
+    const agent = new ClaudeCodeAgent({ model: "m", nativeStructuredOutput: true });
+    await agent.buildCommand(call);
+    expect(agent.sentNativeSchema).toBe(true);
+
+    const interp = agent.createOutputInterpreter();
+    const events = interp.onStdoutLine(
+      JSON.stringify({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "Here is a poem about the sea instead.",
+        session_id: "sess-5",
+      }),
+    );
+    const completed = events.find((e) => e.type === "completed");
+    // Still surfaced as a successful answer -- the engine's own safeParse decides
+    // what to do about it. The warning is the signal, not a control-flow change.
+    expect(completed).toMatchObject({ ok: true, answer: "Here is a poem about the sea instead." });
+  });
+
+  test("does not flag a run where no schema was ever sent", async () => {
+    const agent = new ClaudeCodeAgent({ model: "m" });
+    await agent.buildCommand(call);
+    expect(agent.sentNativeSchema).toBe(false);
+  });
+
   test("falls back to the result string when there is no structured_output", () => {
     const interp = new ClaudeCodeAgent({ model: "m", nativeStructuredOutput: true }).createOutputInterpreter();
     const events = interp.onStdoutLine(

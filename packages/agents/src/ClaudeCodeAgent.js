@@ -152,6 +152,9 @@ export class ClaudeCodeAgent extends BaseCliAgent {
     // Captured rather than read off `this` later: the returned interpreter is a
     // plain object literal, so `this` inside its methods is not the agent.
     const nativeSchemaMode = this.supportsNativeStructuredOutput === true;
+    // The agent itself is captured (not a snapshot of the flag) because
+    // buildCommand sets `sentNativeSchema` after this interpreter is created.
+    const agent = this;
     let sessionId;
     let didEmitStarted = false;
     let didEmitCompleted = false;
@@ -386,6 +389,20 @@ export class ClaudeCodeAgent extends BaseCliAgent {
         const structuredText =
           structuredOutput !== undefined && structuredOutput !== null ? JSON.stringify(structuredOutput) : undefined;
         const resultText = structuredText ?? asString(payload.result);
+        // A schema was sent but the model never called StructuredOutput. Verified
+        // on the wire that `tool_choice` is null, so the tool is offered among
+        // ~115 others rather than forced -- declining is allowed, and observed
+        // (a poem prompt against an enum schema answers in prose). The value is
+        // then ordinary text, which is exactly the outcome the opt-in exists to
+        // avoid, so say so instead of degrading quietly.
+        if (agent.sentNativeSchema && structuredText === undefined && payload.is_error !== true) {
+          logWarning(
+            "ClaudeCodeAgent: --json-schema was sent but the model did not call StructuredOutput; " +
+              "the result is unstructured text. Schema constraints did not apply to this response.",
+            {},
+            "agent.structured-output",
+          );
+        }
         const resultError = asString(payload.error);
         if (!limitBannerText && resultText && isClaudeLimitBanner(resultText)) {
           limitBannerText = resultText;
@@ -497,6 +514,11 @@ export class ClaudeCodeAgent extends BaseCliAgent {
       jsonSchema = JSON.stringify(await zodToClaudeCodeSchema(params.options.outputSchema));
     }
     pushFlag(args, "--json-schema", jsonSchema);
+    // Remembered so the interpreter can tell "the model skipped the tool" from
+    // "no schema was ever sent". Per-run field on a per-run command build; two
+    // concurrent generate() calls on one agent instance would race it, and the
+    // only cost of losing that race is a warning that is wrong in one direction.
+    this.sentNativeSchema = Boolean(jsonSchema) && nativeSchemaMode;
     pushFlag(args, "--max-budget-usd", this.opts.maxBudgetUsd);
     // Deliberately no default: the CLI imposes no restrictive turn limit of its
     // own, and native structured output completes fine without the flag. A

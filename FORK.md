@@ -20,15 +20,37 @@ block to the prompt, greps JSON out of the reply, `safeParse`s it, and re-asks u
 three times. The engine's own log calls this a fallback and warns that
 "schema validity does not guarantee meaningful output".
 
-That is weaker than it looks. Under prompt-injection, schema constraints such as
-`maxItems` and `maxLength` are just _text in the prompt_ — a request. Under Claude
-Code's native `--json-schema` they are _enforced_: a prompt asking for six detailed
-items against a `maxItems: 2` schema returns two short ones. The schema beats the
-prompt.
+That is weaker than it looks: under prompt-injection the schema is text the model is
+asked to honour, so `maxItems` / `maxLength` are a request competing with everything
+else in the prompt.
 
-We rely on that difference: a review pipeline uses the prescan schema as a **context
-budget**, and its output feeds the stable prefix of every downstream call. A budget
-that can be talked out of is not a budget.
+### What `--json-schema` actually does — verified on the wire
+
+Captured by pointing `ANTHROPIC_BASE_URL` at a local logging proxy and inspecting the
+request body, because behaviour alone cannot distinguish "schema went into the
+transport" from "the SDK appended the schema to the system prompt":
+
+- the Zod schema appears **verbatim** in `tools[].input_schema` under a tool named
+  `StructuredOutput`, and is **absent** from `system` and from `messages`. So this is
+  genuine transport-level structured output, not prompt injection.
+- **`tool_choice` is `null`** — the tool is _offered_, not forced, and it is one of
+  ~115 tools in the same request (Read, Bash, Edit, MCP tools, …).
+
+The second point bounds the guarantee, and the bound is real: on a prompt semantically
+unrelated to the schema ("write a poem") the model **declined** to call
+`StructuredOutput` on 2 of 5 schemas and answered in prose instead. With
+`tool_choice: null` that is permitted behaviour, not a bug.
+
+So the accurate claim is: **when the tool is called, the response is shaped by the
+schema rather than by the prompt** — an explicit "do NOT output JSON" in the prompt
+loses. Whether the tool is called at all remains the model's decision. And even a
+called tool guides rather than hard-validates: treat `maxItems`, `pattern`, `format`
+and anything from `.refine()` as strong pressure, not a proof. The engine's
+`safeParse` + retry stays load-bearing; do not remove it on the strength of the schema.
+
+A review pipeline that uses a prescan schema as a **context budget** gets a much
+better budget this way than under prompt-injection — but it must still verify, and it
+must notice when the tool was skipped (see the warning below).
 
 ## What changed
 
@@ -39,17 +61,17 @@ file is _added_ under `packages/engine/tests`, which costs nothing at rebase tim
 (no upstream counterpart to conflict with) and is the only place the agent↔engine
 seam can actually be observed.
 
-| File                                                                  | Change                                                                                                                                                                                                               |
-| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `packages/agents/src/ClaudeCodeAgentOptions.ts`                       | new `nativeStructuredOutput?: boolean` and `maxTurns?: number` options                                                                                                                                               |
-| `packages/agents/src/ClaudeCodeAgent.js`                              | sets `supportsNativeStructuredOutput` from the opt-in flag; wires the call's `outputSchema` into `--json-schema`; passes through `maxTurns`; prefers `structured_output` over the `result` string (native mode only) |
-| `packages/agents/src/zodToClaudeCodeSchema.js`                        | **new** — Zod → JSON Schema targeting **draft-07**                                                                                                                                                                   |
-| `packages/agents/src/index.js`                                        | exports the new converter                                                                                                                                                                                            |
-| `packages/agents/src/cli-surface/cliAgentSurfaceManifest.js`          | declares `--max-turns` in `emittedFlags` for `id: "claude"` — a flag emitted but undeclared fails the CLI-surface conformance test                                                                                   |
-| `packages/agents/tests/cli-capabilities.test.js`                      | claude fixture sets `maxTurns` so the conformance test actually exercises the new flag                                                                                                                               |
-| `packages/agents/src/index.d.ts`                                      | regenerated (`pnpm -C packages/agents run build`) — committed declarations are checked in CI by `scripts/check-dts.mjs`, and TS consumers cannot reach the new options without it                                    |
-| `packages/agents/tests/claude-native-structured-output.test.js`       | **new** — options, argv, schema conversion, result handling                                                                                                                                                          |
-| `packages/engine/tests/claude-code-native-structured-output.test.jsx` | **new** — asserts both directions of the engine's fallback branch with a real agent instance                                                                                                                         |
+| File                                                                  | Change                                                                                                                                                                                                                                                                            |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/agents/src/ClaudeCodeAgentOptions.ts`                       | new `nativeStructuredOutput?: boolean` and `maxTurns?: number` options                                                                                                                                                                                                            |
+| `packages/agents/src/ClaudeCodeAgent.js`                              | sets `supportsNativeStructuredOutput` from the opt-in flag; wires the call's `outputSchema` into `--json-schema`; passes through `maxTurns`; prefers `structured_output` over the `result` string (native mode only); warns when a schema was sent but the model skipped the tool |
+| `packages/agents/src/zodToClaudeCodeSchema.js`                        | **new** — Zod → JSON Schema targeting **draft-07**                                                                                                                                                                                                                                |
+| `packages/agents/src/index.js`                                        | exports the new converter                                                                                                                                                                                                                                                         |
+| `packages/agents/src/cli-surface/cliAgentSurfaceManifest.js`          | declares `--max-turns` in `emittedFlags` for `id: "claude"` — a flag emitted but undeclared fails the CLI-surface conformance test                                                                                                                                                |
+| `packages/agents/tests/cli-capabilities.test.js`                      | claude fixture sets `maxTurns` so the conformance test actually exercises the new flag                                                                                                                                                                                            |
+| `packages/agents/src/index.d.ts`                                      | regenerated (`pnpm -C packages/agents run build`) — committed declarations are checked in CI by `scripts/check-dts.mjs`, and TS consumers cannot reach the new options without it                                                                                                 |
+| `packages/agents/tests/claude-native-structured-output.test.js`       | **new** — options, argv, schema conversion, result handling                                                                                                                                                                                                                       |
+| `packages/engine/tests/claude-code-native-structured-output.test.jsx` | **new** — asserts both directions of the engine's fallback branch with a real agent instance                                                                                                                                                                                      |
 
 ### Design notes
 
