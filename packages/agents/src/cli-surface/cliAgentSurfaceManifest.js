@@ -126,6 +126,7 @@ export const CLI_AGENT_SURFACE_MANIFEST = [
       "--input-format",
       "--json-schema",
       "--max-budget-usd",
+      "--max-turns",
       "--mcp-config",
       "--mcp-debug",
       "--model",

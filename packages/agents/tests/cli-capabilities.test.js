@@ -116,6 +116,7 @@ async function buildDeclaredSurfaceCommands() {
         inputFormat: "stream-json",
         jsonSchema: "schema.json",
         maxBudgetUsd: "1",
+        maxTurns: 6,
         mcpConfig: ["mcp.json"],
         mcpDebug: true,
         model: "m",
