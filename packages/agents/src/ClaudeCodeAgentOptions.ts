@@ -40,9 +40,26 @@ export type ClaudeCodeAgentOptions = BaseCliAgentOptions & {
   inputFormat?: "text" | "stream-json";
   jsonSchema?: string;
   maxBudgetUsd?: number;
+  /**
+   * Cap on agent turns (`--max-turns`). Native structured output is delivered
+   * through a tool call, so it needs more than one turn, and a constrained
+   * schema spends further turns re-emitting until it validates. Defaults to 6
+   * when `nativeStructuredOutput` is on; left unset otherwise.
+   */
+  maxTurns?: number;
   mcpConfig?: string[];
   mcpDebug?: boolean;
   model?: string;
+  /**
+   * Opt in to Claude Code's native structured output (`--json-schema`) for the
+   * task's output schema, instead of the engine's prompt-injection fallback.
+   *
+   * Off by default: the fallback is what every existing pipeline is calibrated
+   * against, and it leaves the prompt untouched. Turn this on when schema
+   * constraints must be *enforced* rather than requested — under
+   * prompt-injection, `maxItems` / `maxLength` are only text in the prompt.
+   */
+  nativeStructuredOutput?: boolean;
   noChrome?: boolean;
   noSessionPersistence?: boolean;
   outputFormat?: "text" | "json" | "stream-json";

@@ -92,6 +92,7 @@ export { renderSmithersAgentPromptGuidance } from "./agent-contract/renderSmithe
 export { createImageGenerationTool } from "./image-generation/createImageGenerationTool.js";
 export { createHttpTool } from "./http/createHttpTool.js";
 export { zodToOpenAISchema } from "./zodToOpenAISchema.js";
+export { zodToClaudeCodeSchema } from "./zodToClaudeCodeSchema.js";
 export { sanitizeForOpenAI } from "./sanitizeForOpenAI.js";
 export { createTranscriptionTool } from "./transcription/createTranscriptionTool.js";
 export {
