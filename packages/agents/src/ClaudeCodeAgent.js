@@ -486,6 +486,11 @@ export class ClaudeCodeAgent extends BaseCliAgent {
     // native structured output is opted in. Otherwise the engine prompt-injects
     // the schema and extracts JSON from the final text (see constructor note).
     // An explicit `jsonSchema` always wins over the task schema.
+    //
+    // `params.options` is the whole object handed to generate(), so the schema
+    // sits at its top level -- which is how the engine passes it. A direct
+    // caller nesting it one level deeper (`generate({options: {outputSchema}})`)
+    // gets no flag and a prose answer, with nothing to diagnose it.
     const nativeSchemaMode = this.supportsNativeStructuredOutput === true;
     let jsonSchema = this.opts.jsonSchema;
     if (!jsonSchema && nativeSchemaMode && params.options?.outputSchema) {

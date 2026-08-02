@@ -26,11 +26,13 @@ const OUTPUT_SCHEMA = z.object({
 const call = { cwd: "/tmp/project", prompt: "list findings", options: { outputSchema: OUTPUT_SCHEMA } };
 
 describe("zodToClaudeCodeSchema", () => {
-  test("targets draft-07, not 2020-12", async () => {
+  test("declares the draft-07 dialect exactly", async () => {
     const schema = await zodToClaudeCodeSchema(OUTPUT_SCHEMA);
     // Claude Code validates against draft-07 and (since 2.1.205) aborts on a
     // schema it rejects, so a newer dialect is a run-time failure, not a nit.
-    expect(String(schema.$schema ?? "")).not.toContain("2020-12");
+    // Pinned by equality on purpose: a "not 2020-12" assertion also passes for
+    // any other dialect, and for no $schema at all.
+    expect(schema.$schema).toBe("http://json-schema.org/draft-07/schema#");
   });
 
   test("preserves the constraints that make the schema a budget", async () => {

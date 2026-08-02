@@ -12,6 +12,13 @@ import { assertZodV4 } from "@smthrs/errors/assertZodV4";
  * and then applies `sanitizeForOpenAI`, whose rewrites encode OpenAI's
  * structured-output dialect and do not apply here.
  *
+ * Caveat worth knowing when the schema is used as a budget: `unrepresentable:
+ * "any"` means types with no JSON Schema equivalent degrade to `{}` rather than
+ * failing loudly -- `z.date()` becomes an unconstrained field. The property
+ * stays required, but its constraint silently disappears. Prefer types that
+ * survive conversion (e.g. an ISO string with a `format`/`pattern`) for fields
+ * whose shape is load-bearing.
+ *
  * Usage:
  * ```ts
  * import { zodToClaudeCodeSchema } from "./zodToClaudeCodeSchema";

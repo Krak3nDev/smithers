@@ -45,6 +45,8 @@ seam can actually be observed.
 | `packages/agents/src/ClaudeCodeAgent.js`                              | sets `supportsNativeStructuredOutput` from the opt-in flag; wires the call's `outputSchema` into `--json-schema`; passes through `maxTurns`; prefers `structured_output` over the `result` string (native mode only) |
 | `packages/agents/src/zodToClaudeCodeSchema.js`                        | **new** — Zod → JSON Schema targeting **draft-07**                                                                                                                                                                   |
 | `packages/agents/src/index.js`                                        | exports the new converter                                                                                                                                                                                            |
+| `packages/agents/src/cli-surface/cliAgentSurfaceManifest.js`          | declares `--max-turns` in `emittedFlags` for `id: "claude"` — a flag emitted but undeclared fails the CLI-surface conformance test                                                                                   |
+| `packages/agents/tests/cli-capabilities.test.js`                      | claude fixture sets `maxTurns` so the conformance test actually exercises the new flag                                                                                                                               |
 | `packages/agents/src/index.d.ts`                                      | regenerated (`pnpm -C packages/agents run build`) — committed declarations are checked in CI by `scripts/check-dts.mjs`, and TS consumers cannot reach the new options without it                                    |
 | `packages/agents/tests/claude-native-structured-output.test.js`       | **new** — options, argv, schema conversion, result handling                                                                                                                                                          |
 | `packages/engine/tests/claude-code-native-structured-output.test.jsx` | **new** — asserts both directions of the engine's fallback branch with a real agent instance                                                                                                                         |
@@ -93,10 +95,11 @@ pnpm -C packages/agents test
 node scripts/check-dts.mjs
 ```
 
-Only three upstream files are _modified_ (`ClaudeCodeAgent.js`,
-`ClaudeCodeAgentOptions.ts`, `index.js`) plus the generated `index.d.ts`; everything
-else is added. Conflicts should be confined to the argument assembly in
-`ClaudeCodeAgent.js` and the options type.
+Five upstream files are _modified_ — `ClaudeCodeAgent.js`, `ClaudeCodeAgentOptions.ts`,
+`index.js`, `cli-surface/cliAgentSurfaceManifest.js`, `tests/cli-capabilities.test.js`
+— plus the generated `index.d.ts`; everything else is added. Conflicts should be
+confined to the argument assembly in `ClaudeCodeAgent.js`, the options type, and the
+one-line manifest/fixture entries.
 
 ## Upstreaming
 
