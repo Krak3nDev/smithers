@@ -58,12 +58,13 @@ seam can actually be observed.
   token and makes the model refuse tool calls, which breaks agentic tasks. Claude Code
   delivers the value through a _tool call_ instead, so the cost is a few turns rather
   than tool access.
-- **No default turn cap.** An earlier revision defaulted `--max-turns` in native mode.
-  That was wrong: the CLI imposes no restrictive limit of its own (verified — the same
-  constrained schema completes without the flag, using 4 turns), so the default solved
-  nothing while capping long agentic runs, and exhausting it surfaces as an opaque
-  "Claude run failed" with no mention of turn exhaustion. `maxTurns` is now an option
-  with no default. A value of `1` starves the schema tool call.
+- **No default turn cap — deliberately.** It is tempting to default `--max-turns` in
+  native mode, since the schema arrives via a tool call. Don't: the CLI imposes no
+  restrictive limit of its own (verified — the same constrained schema completes
+  without the flag, using 4 turns), so a default buys nothing while capping long
+  agentic runs, and exhausting it surfaces as an opaque "Claude run failed" that never
+  mentions turn exhaustion. `maxTurns` is an option with no default. A value of `1`
+  starves the schema tool call.
 - **draft-07 is load-bearing.** Zod's default conversion target is 2020-12 and Claude
   Code rejects that dialect; since 2.1.205 a rejected schema aborts the CLI instead of
   silently degrading. `zodToOpenAISchema` is deliberately not reused: it targets
