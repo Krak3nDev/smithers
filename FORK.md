@@ -69,6 +69,12 @@ seam can actually be observed.
   silently degrading. `zodToOpenAISchema` is deliberately not reused: it targets
   2020-12 and then applies `sanitizeForOpenAI`, whose rewrites encode OpenAI's
   dialect.
+- **`additionalProperties` is the schema author's call, not the converter's.** A plain
+  `z.object({...})` converts without `additionalProperties`; `.strict()` converts to
+  `additionalProperties: false`. The converter passes that through rather than forcing
+  strictness, which would override the author and could reject otherwise-valid output.
+  So a schema used as a context budget should bound both shape (`.strict()`) and size
+  (`maxItems` / `maxLength`).
 - **Result plumbing already existed.** `BaseCliAgent` derives `output` by parsing the
   answer text and passes it to `buildGenerateResult`, which the engine reads as
   `result.output`. The only gap was that an early stop can leave `result` null while
