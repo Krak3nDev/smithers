@@ -41,10 +41,10 @@ export type ClaudeCodeAgentOptions = BaseCliAgentOptions & {
   jsonSchema?: string;
   maxBudgetUsd?: number;
   /**
-   * Cap on agent turns (`--max-turns`). Native structured output is delivered
-   * through a tool call, so it needs more than one turn, and a constrained
-   * schema spends further turns re-emitting until it validates. Defaults to 6
-   * when `nativeStructuredOutput` is on; left unset otherwise.
+   * Cap on agent turns (`--max-turns`). Unset by default: the CLI imposes no
+   * restrictive limit of its own, and exhausting a cap surfaces as an opaque
+   * failure. Note that `1` starves native structured output, which is delivered
+   * through a tool call.
    */
   maxTurns?: number;
   mcpConfig?: string[];

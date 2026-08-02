@@ -65,16 +65,6 @@ export function createClaudeCodeCapabilityRegistry(opts = {}) {
   };
 }
 const TOOL_OUTPUT_MAX_CHARS = 500;
-/**
- * Turn budget applied when native structured output is on and the caller did
- * not set `maxTurns`. The schema is emitted via a tool call, so one turn is
- * never enough, and a constrained schema spends more turns re-emitting until it
- * validates. Measured against a deliberately adversarial case (a prompt asking
- * for six long items under a `maxItems: 2` / `maxLength: 60` schema): 3 turns
- * fails with `error_max_turns`, 4 is exactly enough. This keeps headroom above
- * that boundary rather than sitting on it.
- */
-const NATIVE_SCHEMA_MIN_TURNS = 6;
 let didWarnAnthropicApiKeyUnset = false;
 /**
  * @param {string} toolName
@@ -150,15 +140,18 @@ export class ClaudeCodeAgent extends BaseCliAgent {
     //
     // The trade-off differs from Codex: Claude Code delivers the structured
     // value through a tool call rather than by constraining every token, so it
-    // costs turns (hence the `maxTurns` default below) instead of disabling tool
-    // use outright. Turn it on when schema constraints must be *enforced* --
-    // under prompt-injection `maxItems`/`maxLength` are only a request.
+    // costs a few turns instead of disabling tool use outright. Turn it on when
+    // schema constraints must be *enforced* -- under prompt-injection
+    // `maxItems`/`maxLength` are only a request.
     this.supportsNativeStructuredOutput = opts.nativeStructuredOutput === true;
   }
   /**
    * @returns {CliOutputInterpreter}
    */
   createOutputInterpreter() {
+    // Captured rather than read off `this` later: the returned interpreter is a
+    // plain object literal, so `this` inside its methods is not the agent.
+    const nativeSchemaMode = this.supportsNativeStructuredOutput === true;
     let sessionId;
     let didEmitStarted = false;
     let didEmitCompleted = false;
@@ -385,9 +378,13 @@ export class ClaudeCodeAgent extends BaseCliAgent {
         // structured field and re-serialize it: BaseCliAgent then recovers the
         // object through its existing text -> tryParseJson -> `output` path,
         // which is what the engine reads.
-        const structuredOutput = payload.structured_output;
+        //
+        // Gated on the opt-in so callers who merely set `jsonSchema` keep the
+        // previous interpretation byte for byte -- notably `isClaudeLimitBanner`
+        // below, which must keep seeing the CLI's prose rather than JSON.
+        const structuredOutput = nativeSchemaMode ? payload.structured_output : undefined;
         const structuredText =
-          isRecord(structuredOutput) || Array.isArray(structuredOutput) ? JSON.stringify(structuredOutput) : undefined;
+          structuredOutput !== undefined && structuredOutput !== null ? JSON.stringify(structuredOutput) : undefined;
         const resultText = structuredText ?? asString(payload.result);
         const resultError = asString(payload.error);
         if (!limitBannerText && resultText && isClaudeLimitBanner(resultText)) {
@@ -496,11 +493,13 @@ export class ClaudeCodeAgent extends BaseCliAgent {
     }
     pushFlag(args, "--json-schema", jsonSchema);
     pushFlag(args, "--max-budget-usd", this.opts.maxBudgetUsd);
-    // --json-schema is delivered through a tool call, so a single turn starves
-    // it (`stop_reason: tool_use`, `subtype: error_max_turns`, `result: null`);
-    // schema-validation retries need more still. Default only in native mode so
-    // callers that never opted in keep the CLI's own turn behaviour.
-    pushFlag(args, "--max-turns", this.opts.maxTurns ?? (nativeSchemaMode ? NATIVE_SCHEMA_MIN_TURNS : undefined));
+    // Deliberately no default: the CLI imposes no restrictive turn limit of its
+    // own, and native structured output completes fine without the flag. A
+    // default here would cap long agentic runs, and exhausting it surfaces as an
+    // opaque "Claude run failed". Callers who want a ceiling set `maxTurns`
+    // explicitly -- note that a value of 1 starves the schema tool call
+    // (`subtype: error_max_turns`, `result: null`).
+    pushFlag(args, "--max-turns", this.opts.maxTurns);
     pushList(args, "--mcp-config", this.opts.mcpConfig);
     if (this.opts.mcpDebug) args.push("--mcp-debug");
     pushFlag(args, "--model", this.opts.model ?? this.model);

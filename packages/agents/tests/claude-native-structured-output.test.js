@@ -54,16 +54,20 @@ describe("ClaudeCodeAgent native structured output", () => {
     expect(new ClaudeCodeAgent({ model: "m", nativeStructuredOutput: true }).supportsNativeStructuredOutput).toBe(true);
   });
 
-  test("wires the task schema into --json-schema and reserves turns for it", async () => {
+  test("wires the task schema into --json-schema", async () => {
     const command = await new ClaudeCodeAgent({ model: "m", nativeStructuredOutput: true }).buildCommand(call);
 
     expect(command.args).toContain("--json-schema");
     const emitted = JSON.parse(flagValue(command.args, "--json-schema"));
     expect(emitted.properties.items.maxItems).toBe(2);
+  });
 
-    // --json-schema is delivered through a tool call: one turn starves it, and
-    // 3 was measured to fail with error_max_turns on a constrained schema.
-    expect(Number(flagValue(command.args, "--max-turns"))).toBeGreaterThan(3);
+  test("imposes no turn cap of its own", async () => {
+    // Verified against the real CLI: --json-schema completes without --max-turns
+    // (4 turns used). A default here would cap long agentic runs, and exhausting
+    // it surfaces as an opaque "Claude run failed".
+    const command = await new ClaudeCodeAgent({ model: "m", nativeStructuredOutput: true }).buildCommand(call);
+    expect(command.args).not.toContain("--max-turns");
   });
 
   test("leaves the command untouched when the caller did not opt in", async () => {
@@ -82,7 +86,7 @@ describe("ClaudeCodeAgent native structured output", () => {
     expect(flagValue(command.args, "--json-schema")).toBe(explicit);
   });
 
-  test("an explicit maxTurns wins over the native-mode default", async () => {
+  test("an explicit maxTurns is passed through in native mode", async () => {
     const command = await new ClaudeCodeAgent({
       model: "m",
       nativeStructuredOutput: true,
@@ -109,7 +113,7 @@ describe("ClaudeCodeAgent native structured output", () => {
 
 describe("ClaudeCodeAgent structured_output result handling", () => {
   test("prefers structured_output over the result string", () => {
-    const interp = new ClaudeCodeAgent({ model: "m" }).createOutputInterpreter();
+    const interp = new ClaudeCodeAgent({ model: "m", nativeStructuredOutput: true }).createOutputInterpreter();
     const events = interp.onStdoutLine(
       JSON.stringify({
         type: "result",
@@ -126,7 +130,7 @@ describe("ClaudeCodeAgent structured_output result handling", () => {
   });
 
   test("recovers the value when the run left result null", () => {
-    const interp = new ClaudeCodeAgent({ model: "m" }).createOutputInterpreter();
+    const interp = new ClaudeCodeAgent({ model: "m", nativeStructuredOutput: true }).createOutputInterpreter();
     const events = interp.onStdoutLine(
       JSON.stringify({
         type: "result",
@@ -141,8 +145,26 @@ describe("ClaudeCodeAgent structured_output result handling", () => {
     expect(JSON.parse(completed.answer)).toEqual({ items: [] });
   });
 
-  test("falls back to the result string when there is no structured_output", () => {
+  test("ignores structured_output entirely when not opted in", () => {
+    // Callers who only set `jsonSchema` predate this feature; their result
+    // interpretation must stay byte for byte what it was.
     const interp = new ClaudeCodeAgent({ model: "m" }).createOutputInterpreter();
+    const events = interp.onStdoutLine(
+      JSON.stringify({
+        type: "result",
+        subtype: "success",
+        is_error: false,
+        result: "plain prose",
+        structured_output: { items: [{ name: "a", note: "b" }] },
+        session_id: "sess-4",
+      }),
+    );
+    const completed = events.find((e) => e.type === "completed");
+    expect(completed.answer).toBe("plain prose");
+  });
+
+  test("falls back to the result string when there is no structured_output", () => {
+    const interp = new ClaudeCodeAgent({ model: "m", nativeStructuredOutput: true }).createOutputInterpreter();
     const events = interp.onStdoutLine(
       JSON.stringify({
         type: "result",

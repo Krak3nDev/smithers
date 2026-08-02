@@ -858,9 +858,26 @@ type ClaudeCodeAgentOptions$1 = BaseCliAgentOptions & {
     inputFormat?: "text" | "stream-json";
     jsonSchema?: string;
     maxBudgetUsd?: number;
+    /**
+     * Cap on agent turns (`--max-turns`). Unset by default: the CLI imposes no
+     * restrictive limit of its own, and exhausting a cap surfaces as an opaque
+     * failure. Note that `1` starves native structured output, which is delivered
+     * through a tool call.
+     */
+    maxTurns?: number;
     mcpConfig?: string[];
     mcpDebug?: boolean;
     model?: string;
+    /**
+     * Opt in to Claude Code's native structured output (`--json-schema`) for the
+     * task's output schema, instead of the engine's prompt-injection fallback.
+     *
+     * Off by default: the fallback is what every existing pipeline is calibrated
+     * against, and it leaves the prompt untouched. Turn this on when schema
+     * constraints must be *enforced* rather than requested — under
+     * prompt-injection, `maxItems` / `maxLength` are only text in the prompt.
+     */
+    nativeStructuredOutput?: boolean;
     noChrome?: boolean;
     noSessionPersistence?: boolean;
     outputFormat?: "text" | "json" | "stream-json";
@@ -885,6 +902,7 @@ declare class ClaudeCodeAgent extends BaseCliAgent {
     opts: ClaudeCodeAgentOptions$1;
     capabilities: AgentCapabilityRegistry$c;
     cliEngine: string;
+    supportsNativeStructuredOutput: boolean;
     /**
      * @returns {CliOutputInterpreter}
      */
@@ -1441,6 +1459,30 @@ type CreateHttpToolOptions$1 = CreateHttpToolOptions$2;
 declare function zodToOpenAISchema(zodSchema: zod.ZodTypeAny): Promise<Record<string, unknown>>;
 
 /**
+ * Convert a Zod schema to a JSON Schema for Claude Code's `--json-schema`.
+ *
+ * Claude Code validates the schema against JSON Schema **draft-07**. Zod's
+ * default conversion target is draft 2020-12, and a schema declaring the newer
+ * dialect is rejected. Since Claude Code 2.1.205 a rejected schema aborts the
+ * CLI instead of silently falling back to unstructured output, so the target is
+ * load-bearing at run time rather than cosmetic.
+ *
+ * Deliberately does not reuse `zodToOpenAISchema`: that helper targets 2020-12
+ * and then applies `sanitizeForOpenAI`, whose rewrites encode OpenAI's
+ * structured-output dialect and do not apply here.
+ *
+ * Usage:
+ * ```ts
+ * import { zodToClaudeCodeSchema } from "./zodToClaudeCodeSchema";
+ * const jsonSchema = await zodToClaudeCodeSchema(myZodSchema);
+ * ```
+ *
+ * @param {import("zod").ZodTypeAny} zodSchema
+ * @returns {Promise<Record<string, unknown>>}
+ */
+declare function zodToClaudeCodeSchema(zodSchema: zod.ZodTypeAny): Promise<Record<string, unknown>>;
+
+/**
  * Sanitize a JSON Schema for OpenAI's structured-output API.
  *
  * OpenAI's `response_format` imposes constraints beyond standard JSON Schema:
@@ -1951,4 +1993,4 @@ type TranscriptionProvider = TranscriptionProvider$1;
 type TranscriptionToolInput = TranscriptionToolInput$1;
 type TranscriptionToolResult = TranscriptionToolResult$1;
 
-export { type AgentCapabilityRegistry, type AgentGenerateOptions, type AgentLike, type AgentToolDescriptor, AmpAgent, AnthropicAgent, type AnthropicAgentOptions, AntigravityAgent, type AudioHostResolver, BaseCliAgent, CLI_AGENT_SURFACE_MANIFEST, ClaudeCodeAgent, type CliAgentCapabilityAdapterId, type CliAgentCapabilityDoctorEntry, type CliAgentCapabilityDoctorReport, type CliAgentCapabilityIssue, type CliAgentCapabilityReportEntry, type CliAgentSurfaceManifestEntry, type CliAgentSurfaceOptionMapping, type CliAgentSurfaceResumeContract, type CliAgentUnsupportedFlag, CodexAgent, type CreateHttpToolOptions, type CreateTranscriptionToolOptions, CursorAgent, type CursorAgentOptions, ForgeAgent, GeminiAgent, HermesAgent, type HermesAgentOptions, HermesCliAgent, type HermesCliAgentOptions, type HttpToolAuth, type HttpToolInput, type HttpToolOutput, type ImageGenerationProvider, type ImageGenerationRequest, type ImageGenerationResult, type ImageGenerationToolOptions, KimiAgent, OmpAgent, OpenAIAgent, type OpenAIAgentOptions, OpenClawAgent, type OpenClawAgentOptions, OpenCodeAgent, type OpenCodeAgentOptions, PiAgent, type PiAgentOptions, type PiExtensionUiRequest, type PiExtensionUiResponse, type PinnedAudioTransport, type PinnedAudioTransportRequest, PoolAgent, type PoolAgentOptions, type ResolvedAudioAddress, type SmithersAgentContract, type SmithersAgentContractTool, type SmithersAgentToolCategory, type SmithersListedTool, type SmithersToolSurface, type TranscriptionProvider, type TranscriptionToolInput, type TranscriptionToolResult, VibeAgent, type VibeAgentOptions, createBraveSearchProvider, createElevenLabsTextToSpeechTool, createExaSearchProvider, createGroundedWebSearchToolset, createHermesCliCapabilityRegistry, createHttpTool, createImageGenerationTool, createOmpCapabilityRegistry, createOpenClawCapabilityRegistry, createPoolCapabilityRegistry, createSerperSearchProvider, createSmithersAgentContract, createTavilySearchProvider, createTranscriptionTool, formatCliAgentCapabilityDoctorReport, getCliAgentCapabilityDoctorReport, getCliAgentCapabilityReport, getCliAgentSurfaceManifestEntry, hashCapabilityRegistry, listCliAgentSurfaceManifests, renderSmithersAgentPromptGuidance, sanitizeForOpenAI, zodToOpenAISchema };
+export { type AgentCapabilityRegistry, type AgentGenerateOptions, type AgentLike, type AgentToolDescriptor, AmpAgent, AnthropicAgent, type AnthropicAgentOptions, AntigravityAgent, type AudioHostResolver, BaseCliAgent, CLI_AGENT_SURFACE_MANIFEST, ClaudeCodeAgent, type CliAgentCapabilityAdapterId, type CliAgentCapabilityDoctorEntry, type CliAgentCapabilityDoctorReport, type CliAgentCapabilityIssue, type CliAgentCapabilityReportEntry, type CliAgentSurfaceManifestEntry, type CliAgentSurfaceOptionMapping, type CliAgentSurfaceResumeContract, type CliAgentUnsupportedFlag, CodexAgent, type CreateHttpToolOptions, type CreateTranscriptionToolOptions, CursorAgent, type CursorAgentOptions, ForgeAgent, GeminiAgent, HermesAgent, type HermesAgentOptions, HermesCliAgent, type HermesCliAgentOptions, type HttpToolAuth, type HttpToolInput, type HttpToolOutput, type ImageGenerationProvider, type ImageGenerationRequest, type ImageGenerationResult, type ImageGenerationToolOptions, KimiAgent, OmpAgent, OpenAIAgent, type OpenAIAgentOptions, OpenClawAgent, type OpenClawAgentOptions, OpenCodeAgent, type OpenCodeAgentOptions, PiAgent, type PiAgentOptions, type PiExtensionUiRequest, type PiExtensionUiResponse, type PinnedAudioTransport, type PinnedAudioTransportRequest, PoolAgent, type PoolAgentOptions, type ResolvedAudioAddress, type SmithersAgentContract, type SmithersAgentContractTool, type SmithersAgentToolCategory, type SmithersListedTool, type SmithersToolSurface, type TranscriptionProvider, type TranscriptionToolInput, type TranscriptionToolResult, VibeAgent, type VibeAgentOptions, createBraveSearchProvider, createElevenLabsTextToSpeechTool, createExaSearchProvider, createGroundedWebSearchToolset, createHermesCliCapabilityRegistry, createHttpTool, createImageGenerationTool, createOmpCapabilityRegistry, createOpenClawCapabilityRegistry, createPoolCapabilityRegistry, createSerperSearchProvider, createSmithersAgentContract, createTavilySearchProvider, createTranscriptionTool, formatCliAgentCapabilityDoctorReport, getCliAgentCapabilityDoctorReport, getCliAgentCapabilityReport, getCliAgentSurfaceManifestEntry, hashCapabilityRegistry, listCliAgentSurfaceManifests, renderSmithersAgentPromptGuidance, sanitizeForOpenAI, zodToClaudeCodeSchema, zodToOpenAISchema };

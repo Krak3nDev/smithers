@@ -2,12 +2,12 @@
 
 Fork of [smithersai/smithers](https://github.com/smithersai/smithers).
 
-| | |
-|---|---|
-| Upstream | `https://github.com/smithersai/smithers` (remote `upstream`) |
-| Base commit | `28473094241d26bb3cd430a677f87a1027351617` (2026-08-01, v0.33.0) |
-| Branch | `feat/claude-code-native-structured-output` |
-| Tracking issue | FIN-26 |
+|                |                                                                  |
+| -------------- | ---------------------------------------------------------------- |
+| Upstream       | `https://github.com/smithersai/smithers` (remote `upstream`)     |
+| Base commit    | `28473094241d26bb3cd430a677f87a1027351617` (2026-08-01, v0.33.0) |
+| Branch         | `feat/claude-code-native-structured-output`                      |
+| Tracking issue | FIN-26                                                           |
 
 ## Why this fork exists
 
@@ -21,8 +21,8 @@ three times. The engine's own log calls this a fallback and warns that
 "schema validity does not guarantee meaningful output".
 
 That is weaker than it looks. Under prompt-injection, schema constraints such as
-`maxItems` and `maxLength` are just *text in the prompt* — a request. Under Claude
-Code's native `--json-schema` they are *enforced*: a prompt asking for six detailed
+`maxItems` and `maxLength` are just _text in the prompt_ — a request. Under Claude
+Code's native `--json-schema` they are _enforced_: a prompt asking for six detailed
 items against a `maxItems: 2` schema returns two short ones. The schema beats the
 prompt.
 
@@ -32,18 +32,22 @@ that can be talked out of is not a budget.
 
 ## What changed
 
-Confined to `packages/agents` on purpose — declaring
+No `packages/engine` **source** is modified — declaring
 `supportsNativeStructuredOutput = true` on the agent lands in a branch the engine
-already has, so `packages/engine` needs no edit. Keeping the delta in one package is
-what makes rebasing onto a fast-moving upstream cheap.
+already has. That is what keeps rebasing onto a fast-moving upstream cheap. One test
+file is _added_ under `packages/engine/tests`, which costs nothing at rebase time
+(no upstream counterpart to conflict with) and is the only place the agent↔engine
+seam can actually be observed.
 
-| File | Change |
-|---|---|
-| `packages/agents/src/ClaudeCodeAgentOptions.ts` | new `nativeStructuredOutput?: boolean` and `maxTurns?: number` options |
-| `packages/agents/src/ClaudeCodeAgent.js` | sets `supportsNativeStructuredOutput` from the opt-in flag; wires the call's `outputSchema` into `--json-schema`; emits `--max-turns`; prefers `structured_output` over the `result` string |
-| `packages/agents/src/zodToClaudeCodeSchema.js` | **new** — Zod → JSON Schema targeting **draft-07** |
-| `packages/agents/src/index.js` | exports the new converter |
-| `packages/agents/tests/claude-native-structured-output.test.js` | **new** — covers the above |
+| File                                                                  | Change                                                                                                                                                                                                               |
+| --------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `packages/agents/src/ClaudeCodeAgentOptions.ts`                       | new `nativeStructuredOutput?: boolean` and `maxTurns?: number` options                                                                                                                                               |
+| `packages/agents/src/ClaudeCodeAgent.js`                              | sets `supportsNativeStructuredOutput` from the opt-in flag; wires the call's `outputSchema` into `--json-schema`; passes through `maxTurns`; prefers `structured_output` over the `result` string (native mode only) |
+| `packages/agents/src/zodToClaudeCodeSchema.js`                        | **new** — Zod → JSON Schema targeting **draft-07**                                                                                                                                                                   |
+| `packages/agents/src/index.js`                                        | exports the new converter                                                                                                                                                                                            |
+| `packages/agents/src/index.d.ts`                                      | regenerated (`pnpm -C packages/agents run build`) — committed declarations are checked in CI by `scripts/check-dts.mjs`, and TS consumers cannot reach the new options without it                                    |
+| `packages/agents/tests/claude-native-structured-output.test.js`       | **new** — options, argv, schema conversion, result handling                                                                                                                                                          |
+| `packages/engine/tests/claude-code-native-structured-output.test.jsx` | **new** — asserts both directions of the engine's fallback branch with a real agent instance                                                                                                                         |
 
 ### Design notes
 
@@ -52,11 +56,14 @@ what makes rebasing onto a fast-moving upstream cheap.
   gates the same capability.
 - **The trade-off differs from Codex.** `codex exec --output-schema` constrains every
   token and makes the model refuse tool calls, which breaks agentic tasks. Claude Code
-  delivers the value through a *tool call* instead, so the cost is turns, not tool
-  access — hence `maxTurns` defaulting to 6 in native mode. The default is measured,
-  not guessed: against a prompt asking for six long items under a
-  `maxItems: 2` / `maxLength: 60` schema, 3 turns fails with `error_max_turns` and 4
-  is exactly enough, so the default keeps headroom above that boundary.
+  delivers the value through a _tool call_ instead, so the cost is a few turns rather
+  than tool access.
+- **No default turn cap.** An earlier revision defaulted `--max-turns` in native mode.
+  That was wrong: the CLI imposes no restrictive limit of its own (verified — the same
+  constrained schema completes without the flag, using 4 turns), so the default solved
+  nothing while capping long agentic runs, and exhausting it surfaces as an opaque
+  "Claude run failed" with no mention of turn exhaustion. `maxTurns` is now an option
+  with no default. A value of `1` starves the schema tool call.
 - **draft-07 is load-bearing.** Zod's default conversion target is 2020-12 and Claude
   Code rejects that dialect; since 2.1.205 a rejected schema aborts the CLI instead of
   silently degrading. `zodToOpenAISchema` is deliberately not reused: it targets
@@ -73,11 +80,16 @@ what makes rebasing onto a fast-moving upstream cheap.
 ```bash
 git fetch upstream
 git rebase upstream/main
-pnpm install && pnpm --filter @smthrs/agents test
+pnpm install
+pnpm -C packages/agents run build   # regenerate committed .d.ts, or CI's check-dts fails
+pnpm -C packages/agents test
+node scripts/check-dts.mjs
 ```
 
-The delta touches four files in one package; conflicts should be confined to
-`ClaudeCodeAgent.js` argument assembly and the options type.
+Only three upstream files are _modified_ (`ClaudeCodeAgent.js`,
+`ClaudeCodeAgentOptions.ts`, `index.js`) plus the generated `index.d.ts`; everything
+else is added. Conflicts should be confined to the argument assembly in
+`ClaudeCodeAgent.js` and the options type.
 
 ## Upstreaming
 
